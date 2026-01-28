@@ -93,7 +93,8 @@ BEGIN
           INTO result.name
           FROM each(location.name);
       ELSE
-        SELECT hstore(array_agg('_place_' || key), array_agg(value)) INTO extra_names
+        SELECT hstore(array_agg('_place_' || key), array_agg(value))
+          INTO extra_names
           FROM each(location.name - result.name);
         {% if debug %}RAISE WARNING 'Extra names: %', extra_names;{% endif %}
 
