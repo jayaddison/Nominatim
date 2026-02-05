@@ -31,15 +31,24 @@ class Indexer:
         self.tokenizer = tokenizer
         self.num_threads = num_threads
 
-    def has_pending(self) -> bool:
+    def has_pending(self, minrank: int, maxrank: int) -> bool:
         """ Check if any data still needs indexing.
             This function must only be used after the import has finished.
             Otherwise it will be very expensive.
         """
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT 'a' FROM placex WHERE indexed_status > 0 LIMIT 1")
-                return cur.rowcount > 0
+                cur.execute(""" SELECT 'a'
+                                  FROM placex
+                                 WHERE rank_address BETWEEN %s AND %s
+                                   AND indexed_status > 0 LIMIT 1""",
+                            (minrank, maxrank))
+                pending = cur.rowcount > 0
+
+        if maxrank == 30:  # xref: Indexer.index_by_rank
+            pending = pending or self.has_pending(0, 0)
+
+        return pending
 
     async def index_full(self, analyse: bool = True) -> None:
         """ Index the complete database. This will first index boundaries
@@ -71,7 +80,7 @@ class Indexer:
                 if await self.index_postcodes() > 100:
                     _analyze()
 
-                if not self.has_pending():
+                if not self.has_pending(0, 30):
                     break
 
     async def index_boundaries(self, minrank: int, maxrank: int) -> int:
@@ -147,7 +156,7 @@ class Indexer:
                 total += await self._index(runners.RankRunner(rank, analyzer),
                                            batch=batch, total_tuples=total_tuples.get(rank, 0))
 
-            if maxrank == 30:
+            if maxrank == 30:  # xref: Indexer.has_pending
                 total += await self._index(runners.RankRunner(0, analyzer))
                 total += await self._index(runners.InterpolationRunner(analyzer), batch=20)
 
